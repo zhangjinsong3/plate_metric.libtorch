@@ -1,6 +1,7 @@
 #include <torch/script.h>
 #include <torch/torch.h>
 //#include <ATen/Tensor.h>
+#include <opencv2/core/cuda.hpp>
 #include <opencv2/opencv.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 
@@ -63,6 +64,26 @@ int main(int argc, const char* argv[]) {
 //  std::cout << out_tensor[0][0] << out_tensor[0][1] << std::endl;
 //  std::cout << out_tensor.slice(/*dim=*/0, /*start=*/0, /*end=*/1) << '\n';
 
+////////////////////////////////////////////////////////////////////////////////////
+  // use GpuMat as input format
+  cv::cuda::GpuMat gImage;
+  gImage.upload(image);
+  std::vector<int64_t> sizes = {static_cast<int64_t>(gImage.channels()),
+                                static_cast<int64_t>(gImage.rows),
+                                static_cast<int64_t>(gImage.cols)};
+  auto options = torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA);
+  auto tensor_image = torch::from_blob(gImage.data, torch::IntList(sizes),options);
+//  img_tensor = img_tensor.permute({0,3,1,2});
+  img_tensor[0][0] = img_tensor[0][0].sub_(0.1307).div_(0.3081);
+  img_tensor[0][1] = img_tensor[0][1].sub_(0.1307).div_(0.3081);
+  img_tensor[0][2] = img_tensor[0][2].sub_(0.1307).div_(0.3081);
+  auto gpu_var = torch::autograd::make_variable(img_tensor, false);
+  inputs.pop_back();
+  if(GPU)
+      gpu_var = gpu_var.to(at::kCUDA);
+  inputs.push_back(gpu_var);
+  torch::Tensor out_tensor_gpu = module->forward(inputs).toTensor();
+  std::cout << out_tensor.slice(/*dim=*/0, /*start=*/0, /*end=*/2) << '\n';
   return 0;
 }
 
